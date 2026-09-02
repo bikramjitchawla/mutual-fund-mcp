@@ -1,5 +1,7 @@
 # Mutual Fund MCP
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A stateless Model Context Protocol server for Indian mutual-fund NAV data and deterministic analytics. It works with Claude Desktop, Cursor-style MCP clients, custom agents, and remote Streamable HTTP clients.
 
 It provides:
@@ -184,4 +186,3 @@ tail -F "$HOME/Library/Logs/Claude/mcp-server-mutual-fund-mcp.log"
 ```
 
 The server logs tool names, completion times, and error codes without logging full NAV histories.
-
