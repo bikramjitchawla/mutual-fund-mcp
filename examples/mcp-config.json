@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "mutual-fund-mcp": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/bikramjitchawla/mutual-fund-mcp.git",
+        "mutual-fund-mcp"
+      ],
+      "env": {
+        "MF_PROVIDER": "mfapi"
+      }
+    }
+  }
+}
+

@@ -1,0 +1,10 @@
+services:
+  mutual-fund-mcp:
+    build: .
+    environment:
+      MF_PROVIDER: mfapi
+      LOG_LEVEL: INFO
+      PORT: 8000
+    ports:
+      - "8000:8000"
+
