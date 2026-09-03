@@ -4,7 +4,7 @@
       "command": "uvx",
       "args": [
         "--from",
-        "git+https://github.com/bikramjitchawla/mutual-fund-mcp.git",
+        "git+https://github.com/bikramjitchawla/mutual-fund-mcp.git@v0.1.0",
         "mutual-fund-mcp"
       ],
       "env": {
@@ -13,4 +13,3 @@
     }
   }
 }
-

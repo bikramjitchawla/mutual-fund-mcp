@@ -44,7 +44,7 @@ After this repository is public, users with `uv` can paste the following into th
       "command": "uvx",
       "args": [
         "--from",
-        "git+https://github.com/bikramjitchawla/mutual-fund-mcp.git",
+        "git+https://github.com/bikramjitchawla/mutual-fund-mcp.git@v0.1.0",
         "mutual-fund-mcp"
       ],
       "env": {
@@ -75,7 +75,7 @@ uv run mutual-fund-mcp --help
 Or install directly from the public Git repository:
 
 ```bash
-uvx --from git+https://github.com/bikramjitchawla/mutual-fund-mcp.git mutual-fund-mcp
+uvx --from git+https://github.com/bikramjitchawla/mutual-fund-mcp.git@v0.1.0 mutual-fund-mcp
 ```
 
 The default transport is stdio, which is intended to be launched by an MCP client. It will wait silently when started manually.
