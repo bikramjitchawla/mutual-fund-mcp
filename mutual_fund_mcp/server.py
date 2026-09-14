@@ -5,13 +5,19 @@ import logging
 import os
 import time
 from collections.abc import Callable, Sequence
+from pathlib import Path
 from typing import Any
 
 from fastmcp import FastMCP
 
 from clients.amfi import AMFIProvider
+from clients.benchmarks import CSVBenchmarkProvider, NSEBenchmarkProvider
 from clients.mfapi import MFAPIProvider
+from clients.ppfas import PPFASProvider
+from services.benchmarks import BenchmarkService
 from services.errors import FundError
+from services.holdings import HoldingsService
+from services.holdings_store import HoldingsStore
 from services.mutual_funds import MutualFundService
 
 logger = logging.getLogger("mutual_fund_mcp")
@@ -40,6 +46,21 @@ provider = (
     else MFAPIProvider()
 )
 service = MutualFundService(provider)
+benchmark_service = BenchmarkService(
+    provider,
+    CSVBenchmarkProvider(os.environ["MF_BENCHMARK_CSV_DIR"])
+    if os.getenv("MF_BENCHMARK_CSV_DIR")
+    else NSEBenchmarkProvider(),
+)
+holdings_service = HoldingsService(
+    PPFASProvider(),
+    HoldingsStore(
+        os.getenv(
+            "MF_HOLDINGS_DB",
+            str(Path.home() / ".local/share/mutual-fund-mcp/holdings.sqlite3"),
+        )
+    ),
+)
 
 
 def _call(operation: Callable[..., dict], *args: Any) -> dict:
@@ -62,8 +83,12 @@ def _call(operation: Callable[..., dict], *args: Any) -> dict:
         )
         return error.as_response()
     except Exception:
-        logger.exception("tool_call_failed tool=%s code=INTERNAL_ERROR", operation.__name__)
-        return FundError("INTERNAL_ERROR", "An unexpected internal error occurred.").as_response()
+        logger.exception(
+            "tool_call_failed tool=%s code=INTERNAL_ERROR", operation.__name__
+        )
+        return FundError(
+            "INTERNAL_ERROR", "An unexpected internal error occurred."
+        ).as_response()
 
 
 @mcp.tool()
@@ -92,8 +117,132 @@ def calculate_fund_metrics(scheme_code: str, from_date: str, to_date: str) -> di
 
 @mcp.tool()
 def compare_funds(scheme_codes: list[str], from_date: str, to_date: str) -> dict:
-    """Compare deterministic metrics for 2-10 exact scheme codes over one period."""
+    """Compare return, downside risk, rolling 1Y/3Y returns, drawdown duration and recovery for 2-10 schemes."""
     return _call(service.compare_funds, scheme_codes, from_date, to_date)
+
+
+@mcp.tool()
+def calculate_sip_returns(
+    scheme_code: str, monthly_amount: float, from_date: str, to_date: str
+) -> dict:
+    """Simulate monthly SIP over at most five years; return units, value and ACT/365 XIRR.
+
+    Schedule starts at from_date (inclusive), ends before to_date, and clamps
+    the original day to month end. Buy at the first NAV on/after each date;
+    value at the last NAV on/before to_date. Amount must be positive.
+    """
+    return _call(
+        service.calculate_sip_returns, scheme_code, monthly_amount, from_date, to_date
+    )
+
+
+@mcp.tool()
+def compare_sip_returns(
+    scheme_codes: list[str], monthly_amount: float, from_date: str, to_date: str
+) -> dict:
+    """Compare monthly SIP value and XIRR for 2-10 schemes over at most five years.
+
+    Uses the same schedule as calculate_sip_returns. Each fund exposes its
+    actual executed installments and valuation date; coverage may differ.
+    """
+    return _call(
+        service.compare_sip_returns, scheme_codes, monthly_amount, from_date, to_date
+    )
+
+
+@mcp.tool()
+def calculate_rolling_returns(scheme_code: str, from_date: str, to_date: str) -> dict:
+    """Return calendar 1Y/3Y rolling CAGR windows and summaries over at most five years."""
+    return _call(service.calculate_rolling_returns, scheme_code, from_date, to_date)
+
+
+@mcp.tool()
+def search_benchmarks(query: str = "") -> dict:
+    """Find supported total-return benchmarks; empty query lists the catalog."""
+    return _call(benchmark_service.search_benchmarks, query)
+
+
+@mcp.tool()
+def compare_fund_with_benchmark(
+    scheme_code: str, benchmark_code: str, from_date: str, to_date: str
+) -> dict:
+    """Compare fund and TRI benchmark CAGR, risk and return correlation on identical dates."""
+    return _call(
+        benchmark_service.compare_fund_with_benchmark,
+        scheme_code,
+        benchmark_code,
+        from_date,
+        to_date,
+    )
+
+
+@mcp.tool()
+def get_holdings_coverage() -> dict:
+    """List supported PPFAS schemes and available monthly XLSX disclosures. Not all AMCs."""
+    return _call(holdings_service.get_holdings_coverage)
+
+
+@mcp.tool()
+def get_fund_holdings(scheme_code: str, month: str | None = None) -> dict:
+    """Get ISIN-bearing cash holdings for a covered PPFAS scheme. Month YYYY-MM; defaults to latest.
+
+    Downloads and persists the official monthly snapshot on first use. Cash,
+    derivatives and receivables are excluded; arbitrage cash legs are included.
+    """
+    return _call(holdings_service.get_fund_holdings, scheme_code, month)
+
+
+@mcp.tool()
+def get_funds_holding_stock(isin: str, month: str | None = None) -> dict:
+    """Rank covered PPFAS funds by reported ISIN security weight. Not all AMCs.
+
+    Always explain response coverage and portfolio date. Missing funds are
+    explicitly reported; an empty result does not mean no Indian funds hold it.
+    """
+    return _call(holdings_service.get_funds_holding_stock, isin, month)
+
+
+@mcp.tool()
+def compare_fund_overlap(scheme_codes: list[str], month: str | None = None) -> dict:
+    """Find overlapping ISIN securities and unique holdings across 2-10 covered funds.
+
+    Use exact codes from get_holdings_coverage. Month is YYYY-MM; omitted means
+    the latest disclosure month common to every selected fund. Returns shared
+    securities with each fund's weight, pairwise sum-of-minimum-weight overlap,
+    and securities common to all selected funds. Includes stocks and other cash
+    securities (bonds, REITs, fund units); not equity-only. Always explain scope.
+    All requested funds must have a valid same-month snapshot.
+    """
+    return _call(holdings_service.compare_fund_overlap, scheme_codes, month)
+
+
+@mcp.tool()
+def get_stock_ownership_changes(isin: str, from_month: str, to_month: str) -> dict:
+    """Compare quantities across matched PPFAS monthly snapshots (YYYY-MM).
+
+    Corporate actions can cause changes; these are not verified trades.
+    """
+    return _call(
+        holdings_service.get_stock_ownership_changes, isin, from_month, to_month
+    )
+
+
+@mcp.tool()
+def get_funds_accumulating_stock(isin: str, month: str) -> dict:
+    """List covered funds with increased quantities since the prior month; not verified buying flows."""
+    return _call(holdings_service.get_funds_accumulating_stock, isin, month)
+
+
+@mcp.tool()
+def get_new_fund_buyers(isin: str, month: str) -> dict:
+    """List new positions within covered funds with both monthly snapshots available."""
+    return _call(holdings_service.get_new_fund_buyers, isin, month)
+
+
+@mcp.tool()
+def get_fund_exits_from_stock(isin: str, month: str) -> dict:
+    """List positions absent in the current snapshot but present in the prior matched month."""
+    return _call(holdings_service.get_fund_exits_from_stock, isin, month)
 
 
 def _parser() -> argparse.ArgumentParser:

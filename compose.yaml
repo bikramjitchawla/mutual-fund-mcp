@@ -5,6 +5,11 @@ services:
       MF_PROVIDER: mfapi
       LOG_LEVEL: INFO
       PORT: 8000
+      MF_HOLDINGS_DB: /data/holdings.sqlite3
+    volumes:
+      - holdings-data:/data
     ports:
       - "8000:8000"
 
+volumes:
+  holdings-data:
