@@ -151,7 +151,7 @@ The full executable example is in [`examples/client.py`](examples/client.py).
 | `get_holdings_coverage` | List supported PPFAS schemes and disclosure months |
 | `get_fund_holdings` | Retrieve a covered fund's monthly ISIN holdings |
 | `get_funds_holding_stock` | Rank covered funds holding an ISIN by reported weight |
-| `compare_fund_overlap` | List shared and unique securities, and weighted overlap across covered funds |
+| `compare_fund_overlap` | Summarize weighted overlap, top shared securities, and key differences across covered funds |
 | `get_stock_ownership_changes` | Compare positions across matched monthly snapshots |
 | `get_funds_accumulating_stock` | Find quantity increases since the preceding month |
 | `get_new_fund_buyers` | Find newly present positions in matched snapshots |

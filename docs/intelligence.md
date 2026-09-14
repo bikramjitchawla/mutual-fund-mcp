@@ -130,8 +130,9 @@ and scope; holdings results retain source URLs and retrieval times.
 
 ### Fund overlap
 
-`compare_fund_overlap(scheme_codes, month=None)` compares 2–10 distinct scheme
-codes, subject to the four-scheme coverage above. Repeated codes are deduplicated;
+`compare_fund_overlap(scheme_codes, month=None, max_common_items=10,
+max_unique_items=4, include_details=False)` compares 2–10 distinct scheme codes,
+subject to the four-scheme coverage above. Repeated codes are deduplicated;
 unsupported codes fail before retrieval. When no month is supplied, the tool
 selects the latest disclosure month **common to every selected fund**. With an
 explicit YYYY-MM month, all selected snapshots must be available. A missing or
@@ -144,7 +145,21 @@ invalid snapshot fails the comparison; no fund is silently dropped.
 }
 ```
 
-The response includes:
+The default response is concise. `compact_summary.summary_text` is ready for a
+client to display and contains the fund names, overlap percentage and level,
+common-security count, top common holdings, top unique holdings, and a short
+interpretation. `max_common_items` and `max_unique_items` control their respective
+lists and accept values from 1 to 25. The structured
+`compact_summary.comparisons` contains the same information for clients that
+want to format it themselves.
+
+Overlap levels use fixed thresholds:
+
+- **High / 🔴:** 50% or more
+- **Moderate / 🟡:** 25% to less than 50%
+- **Low / 🟢:** less than 25%
+
+Set `include_details` to `true` to add a complete `details` object containing:
 
 - `shared_securities`: securities held by at least two selected funds, matched
   by ISIN, with each owner's name and reported portfolio weight.
@@ -158,11 +173,12 @@ The response includes:
   across every selected fund and the sum of the minimum weight across all funds
   for each common security. This is distinct from average pairwise overlap.
 
-Shared securities are ordered by fund count, then name and ISIN. Pairwise shared
-securities are ordered by overlap contribution. Positive-quantity holdings with
-published rounded-zero weights still count as shared, contributing zero weight.
-Weights are not renormalized: identical imported portfolios can have less than
-100% overlap because omitted cash/derivatives are not part of this comparison.
+Compact common holdings are ordered by overlap contribution, and compact unique
+holdings by their fund weight. Full shared securities are ordered by fund count,
+then name and ISIN. Positive-quantity holdings with published rounded-zero weights
+still count as shared, contributing zero weight. Weights are not renormalized:
+identical imported portfolios can have less than 100% overlap because omitted
+cash/derivatives are not part of this comparison.
 
 **This compares all imported ISIN securities, not only stocks.** Bonds, REITs and
 fund units can also overlap. It inherits the cash-security and arbitrage limitations

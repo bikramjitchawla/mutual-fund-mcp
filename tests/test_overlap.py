@@ -7,7 +7,7 @@ import pytest
 from fastmcp import Client
 
 from services.errors import FundError
-from services.overlap import calculate_overlap
+from services.overlap import calculate_overlap, compact_overlap
 from tests.test_holdings import ISIN, OTHER, service, snapshot
 
 THIRD = "INE002A01018"
@@ -123,6 +123,62 @@ def test_calculator_refuses_mixed_months():
         )
 
 
+@pytest.mark.parametrize(
+    "weight,level,indicator",
+    [
+        (75, "High", "🔴"),
+        (50, "High", "🔴"),
+        (49.99, "Moderate", "🟡"),
+        (25, "Moderate", "🟡"),
+        (24.99, "Low", "🟢"),
+        (0, "Low", "🟢"),
+    ],
+)
+def test_compact_summary_classifies_overlap(weight, level, indicator):
+    details = calculate_overlap(
+        [
+            portfolio(CODES[0], [(ISIN, weight, 1)]),
+            portfolio(CODES[1], [(ISIN, weight, 1)]),
+        ]
+    )
+    comparison = compact_overlap(details)["comparisons"][0]
+    assert comparison["overlap_level"] == level
+    assert comparison["indicator"] == indicator
+
+
+def test_compact_summary_is_ranked_truncated_and_ready_to_display():
+    details = calculate_overlap(
+        [
+            portfolio(CODES[0], [(ISIN, 8, 1), (OTHER, 4, 1), (FOURTH, 3, 1)]),
+            portfolio(CODES[1], [(ISIN, 5, 1), (OTHER, 2, 1), (THIRD, 7, 1)]),
+        ]
+    )
+    compact = compact_overlap(details, max_common_items=1, max_unique_items=1)
+    comparison = compact["comparisons"][0]
+    assert comparison["title"] == (
+        "Parag Parikh Flexi Cap vs Parag Parikh ELSS Tax Saver"
+    )
+    assert comparison["portfolio_overlap_pct"] == 7
+    assert comparison["common_security_count"] == 2
+    assert len(comparison["top_common_holdings"]) == 1
+    assert comparison["top_common_holdings"][0]["overlap_weight_pct"] == 5
+    assert comparison["unique_holdings"][0]["unique_security_count"] == 1
+    assert len(comparison["unique_holdings"][0]["top_unique_holdings"]) == 1
+    assert "Portfolio overlap: 7.00%  🟢 Low" in compact["summary_text"]
+    assert "2 common securities" in compact["summary_text"]
+    assert "Top common holdings" in compact["summary_text"]
+    assert "Key differences" in compact["summary_text"]
+    assert "Interpretation:" in compact["summary_text"]
+
+
+@pytest.mark.parametrize("limit", [0, 26, True, 1.5, "10"])
+def test_compact_summary_validates_item_limit(limit):
+    details = calculate_overlap([portfolio(CODES[0], []), portfolio(CODES[1], [])])
+    with pytest.raises(FundError) as error:
+        compact_overlap(details, limit)
+    assert error.value.code == "INVALID_LIMIT"
+
+
 def test_service_selects_latest_common_month_not_each_funds_latest(tmp_path):
     data = {
         (code, "2026-07"): portfolio(code, [(ISIN, 5, 1)], "2026-07")
@@ -135,12 +191,45 @@ def test_service_selects_latest_common_month_not_each_funds_latest(tmp_path):
     assert result["data_as_of"] == "2026-07-31"
     assert result["coverage"]["compared_scheme_codes"] == CODES[:2]
     assert result["coverage"]["complete_for_requested_funds"]
+    assert "summary_text" in result["compact_summary"]
+    assert "details" not in result
     assert svc.provider.downloads == 2
     assert all(f["source"] and f["retrieved_at"] for f in result["funds"])
     svc.provider.disclosures = lambda: pytest.fail(
         "Explicit cached month should work offline"
     )
     svc.compare_fund_overlap(CODES[:2], "2026-07")
+
+
+def test_service_can_include_full_details(tmp_path):
+    data = {(code, "2026-08"): portfolio(code, [(ISIN, 5, 1)]) for code in CODES[:2]}
+    result = service(tmp_path, data).compare_fund_overlap(
+        CODES[:2],
+        "2026-08",
+        max_common_items=3,
+        max_unique_items=2,
+        include_details=True,
+    )
+    assert result["compact_summary"]["items_shown"] == {
+        "common": 3,
+        "unique_per_fund": 2,
+    }
+    assert result["details"]["pairwise"][0]["weighted_overlap_pct"] == 5
+
+
+def test_service_rejects_invalid_unique_limit(tmp_path):
+    svc = service(tmp_path, {})
+    with pytest.raises(FundError) as error:
+        svc.compare_fund_overlap(CODES[:2], "2026-08", max_unique_items=0)
+    assert error.value.code == "INVALID_LIMIT"
+
+
+def test_service_rejects_invalid_detail_option(tmp_path):
+    svc = service(tmp_path, {})
+    svc.provider.disclosures = lambda: pytest.fail("Invalid input must not fetch")
+    with pytest.raises(FundError) as error:
+        svc.compare_fund_overlap(CODES[:2], include_details="yes")
+    assert error.value.code == "INVALID_DETAIL_OPTION"
 
 
 def test_service_missing_snapshot_is_an_error_not_partial_overlap(tmp_path):
@@ -210,7 +299,21 @@ def test_overlap_tool_through_mcp(tmp_path, monkeypatch):
             assert not result.is_error
             payload = json.loads(result.content[0].text)
             json.dumps(payload, allow_nan=False)
-            assert payload["pairwise"][0]["weighted_overlap_pct"] == 7
+            comparison = payload["compact_summary"]["comparisons"][0]
+            assert comparison["portfolio_overlap_pct"] == 7
+            assert "details" not in payload
+            detailed = await client.call_tool(
+                "compare_fund_overlap",
+                {
+                    "scheme_codes": CODES[:2],
+                    "month": "2026-08",
+                    "include_details": True,
+                },
+            )
+            detailed_payload = json.loads(detailed.content[0].text)
+            assert (
+                detailed_payload["details"]["pairwise"][0]["weighted_overlap_pct"] == 7
+            )
             result = await client.call_tool(
                 "compare_fund_overlap", {"scheme_codes": [CODES[0], "118955"]}
             )

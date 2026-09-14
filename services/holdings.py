@@ -7,7 +7,11 @@ from concurrent.futures import ThreadPoolExecutor
 from clients.ppfas import FUNDS, SCOPE, month_end, validate_isin
 from services.errors import FundError
 from services.mutual_funds import MAX_COMPARE_FUNDS, MutualFundService
-from services.overlap import calculate_overlap
+from services.overlap import (
+    calculate_overlap,
+    compact_overlap,
+    validate_overlap_limit,
+)
 
 
 class HoldingsService:
@@ -82,7 +86,12 @@ class HoldingsService:
         }
 
     def compare_fund_overlap(
-        self, scheme_codes: list[str], month: str | None = None
+        self,
+        scheme_codes: list[str],
+        month: str | None = None,
+        max_common_items: int = 10,
+        max_unique_items: int = 4,
+        include_details: bool = False,
     ) -> dict:
         codes = list(dict.fromkeys(scheme_codes))
         if not 2 <= len(codes) <= MAX_COMPARE_FUNDS:
@@ -95,6 +104,12 @@ class HoldingsService:
                 "UNSUPPORTED_HOLDINGS_SCHEME",
                 "Overlap supports only covered PPFAS schemes; use get_holdings_coverage.",
             )
+        if not isinstance(include_details, bool):
+            raise FundError(
+                "INVALID_DETAIL_OPTION", "include_details must be true or false."
+            )
+        validate_overlap_limit(max_common_items, "max_common_items")
+        validate_overlap_limit(max_unique_items, "max_unique_items")
         if month is None:
             links = self.provider.disclosures()
             common_months = set.intersection(
@@ -110,10 +125,23 @@ class HoldingsService:
         # All requested snapshots must succeed. Never compare a silently reduced subset.
         with ThreadPoolExecutor(max_workers=min(4, len(codes))) as pool:
             snapshots = list(pool.map(lambda code: self._snapshot(code, month), codes))
-        return {
+        details = calculate_overlap(snapshots)
+        response = {
             "month": month,
             "data_as_of": day,
-            **calculate_overlap(snapshots),
+            "compact_summary": compact_overlap(
+                details, max_common_items, max_unique_items
+            ),
+            "funds": [
+                {
+                    "scheme_code": snapshot["scheme_code"],
+                    "scheme_name": snapshot["scheme_name"],
+                    "portfolio_date": snapshot["portfolio_date"],
+                    "source": snapshot["source"],
+                    "retrieved_at": snapshot["retrieved_at"],
+                }
+                for snapshot in snapshots
+            ],
             "coverage": {
                 "scope": SCOPE,
                 "requested_scheme_codes": codes,
@@ -123,6 +151,9 @@ class HoldingsService:
             },
             "retrieved_at": MutualFundService._now(),
         }
+        if include_details:
+            response["details"] = details
+        return response
 
     def _load_month(self, month: str) -> tuple[dict, list]:
         def load(code):

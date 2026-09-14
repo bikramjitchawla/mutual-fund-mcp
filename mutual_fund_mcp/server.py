@@ -203,17 +203,31 @@ def get_funds_holding_stock(isin: str, month: str | None = None) -> dict:
 
 
 @mcp.tool()
-def compare_fund_overlap(scheme_codes: list[str], month: str | None = None) -> dict:
-    """Find overlapping ISIN securities and unique holdings across 2-10 covered funds.
+def compare_fund_overlap(
+    scheme_codes: list[str],
+    month: str | None = None,
+    max_common_items: int = 10,
+    max_unique_items: int = 4,
+    include_details: bool = False,
+) -> dict:
+    """Return a concise holdings-overlap comparison for 2-10 covered funds.
 
     Use exact codes from get_holdings_coverage. Month is YYYY-MM; omitted means
-    the latest disclosure month common to every selected fund. Returns shared
-    securities with each fund's weight, pairwise sum-of-minimum-weight overlap,
-    and securities common to all selected funds. Includes stocks and other cash
-    securities (bonds, REITs, fund units); not equity-only. Always explain scope.
-    All requested funds must have a valid same-month snapshot.
+    the latest common disclosure month. The default response has ready-to-display
+    summary_text with overlap level, top common holdings and key differences.
+    It shows 10 common and 4 unique holdings by default; both limits accept 1-25.
+    Set include_details=true for complete ISIN-level data. Includes stocks and
+    other cash securities; not equity-only. Present summary_text concisely unless
+    the user explicitly asks for details.
     """
-    return _call(holdings_service.compare_fund_overlap, scheme_codes, month)
+    return _call(
+        holdings_service.compare_fund_overlap,
+        scheme_codes,
+        month,
+        max_common_items,
+        max_unique_items,
+        include_details,
+    )
 
 
 @mcp.tool()
