@@ -2,6 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CI](https://github.com/bikramjitchawla/mutual-fund-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/bikramjitchawla/mutual-fund-mcp/actions/workflows/ci.yml)
+[![M8ven Score](https://m8ven.ai/badge/mcp/bikramjitchawla/mutual-fund-mcp)](https://m8ven.ai/mcp/bikramjitchawla/mutual-fund-mcp)
 
 A Model Context Protocol server for Indian mutual-fund NAV data, deterministic analytics, benchmark comparison, and public portfolio research. It works with Claude Desktop, Cursor-style MCP clients, custom agents, and remote Streamable HTTP clients.
 
