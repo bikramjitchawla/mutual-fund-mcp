@@ -5,31 +5,68 @@ from server import mcp as compatibility_mcp
 
 
 class ServerPackagingTests(unittest.IsolatedAsyncioTestCase):
+    EXPECTED_TOOLS = {
+        "search_funds",
+        "get_latest_nav",
+        "get_nav_history",
+        "calculate_fund_metrics",
+        "compare_funds",
+        "calculate_sip_returns",
+        "compare_sip_returns",
+        "calculate_rolling_returns",
+        "search_benchmarks",
+        "compare_fund_with_benchmark",
+        "get_holdings_coverage",
+        "get_fund_holdings",
+        "get_funds_holding_stock",
+        "compare_fund_overlap",
+        "get_stock_ownership_changes",
+        "get_funds_accumulating_stock",
+        "get_new_fund_buyers",
+        "get_fund_exits_from_stock",
+    }
+
     async def test_all_public_tools_are_registered(self):
         tools = await mcp.get_tools()
-        self.assertEqual(
-            set(tools),
-            {
-                "search_funds",
-                "get_latest_nav",
-                "get_nav_history",
-                "calculate_fund_metrics",
-                "compare_funds",
-                "calculate_sip_returns",
-                "compare_sip_returns",
-                "calculate_rolling_returns",
-                "search_benchmarks",
-                "compare_fund_with_benchmark",
-                "get_holdings_coverage",
-                "get_fund_holdings",
-                "get_funds_holding_stock",
-                "compare_fund_overlap",
-                "get_stock_ownership_changes",
-                "get_funds_accumulating_stock",
-                "get_new_fund_buyers",
-                "get_fund_exits_from_stock",
-            },
+        self.assertEqual(set(tools), self.EXPECTED_TOOLS)
+
+    async def test_all_public_tools_expose_boolean_annotations(self):
+        from fastmcp import Client
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+
+        self.assertEqual({tool.name for tool in tools}, self.EXPECTED_TOOLS)
+        cache_writing_tools = {
+            "get_fund_holdings",
+            "get_funds_holding_stock",
+            "compare_fund_overlap",
+            "get_stock_ownership_changes",
+            "get_funds_accumulating_stock",
+            "get_new_fund_buyers",
+            "get_fund_exits_from_stock",
+        }
+        hints = (
+            "readOnlyHint",
+            "destructiveHint",
+            "idempotentHint",
+            "openWorldHint",
         )
+        for tool in tools:
+            with self.subTest(tool=tool.name):
+                self.assertIsNotNone(tool.annotations)
+                values = tool.annotations.model_dump(exclude_none=True)
+                self.assertTrue(set(hints).issubset(values))
+                self.assertTrue(all(type(values[hint]) is bool for hint in hints))
+                self.assertEqual(
+                    {hint: values[hint] for hint in hints},
+                    {
+                        "readOnlyHint": tool.name not in cache_writing_tools,
+                        "destructiveHint": False,
+                        "idempotentHint": True,
+                        "openWorldHint": tool.name != "search_benchmarks",
+                    },
+                )
 
     def test_root_server_remains_compatible(self):
         self.assertIs(compatibility_mcp, mcp)

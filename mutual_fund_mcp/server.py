@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 from clients.amfi import AMFIProvider
 from clients.benchmarks import CSVBenchmarkProvider, NSEBenchmarkProvider
@@ -62,6 +63,25 @@ holdings_service = HoldingsService(
     ),
 )
 
+EXTERNAL_READ_ONLY = ToolAnnotations(
+    readOnlyHint=True,
+    destructiveHint=False,
+    idempotentHint=True,
+    openWorldHint=True,
+)
+LOCAL_READ_ONLY = ToolAnnotations(
+    readOnlyHint=True,
+    destructiveHint=False,
+    idempotentHint=True,
+    openWorldHint=False,
+)
+EXTERNAL_CACHE_WRITING = ToolAnnotations(
+    readOnlyHint=False,
+    destructiveHint=False,
+    idempotentHint=True,
+    openWorldHint=True,
+)
+
 
 def _call(operation: Callable[..., dict], *args: Any) -> dict:
     started = time.monotonic()
@@ -91,37 +111,37 @@ def _call(operation: Callable[..., dict], *args: Any) -> dict:
         ).as_response()
 
 
-@mcp.tool()
+@mcp.tool(annotations=EXTERNAL_READ_ONLY)
 def search_funds(query: str) -> dict:
     """Search mutual fund schemes by name. Resolve a name before using other tools."""
     return _call(service.search_funds, query)
 
 
-@mcp.tool()
+@mcp.tool(annotations=EXTERNAL_READ_ONLY)
 def get_latest_nav(scheme_code: str) -> dict:
     """Return the latest published end-of-day NAV for an exact scheme code."""
     return _call(service.get_latest_nav, scheme_code)
 
 
-@mcp.tool()
+@mcp.tool(annotations=EXTERNAL_READ_ONLY)
 def get_nav_history(scheme_code: str, from_date: str, to_date: str) -> dict:
     """Return NAV history. Dates must be ISO YYYY-MM-DD and span at most five years."""
     return _call(service.get_nav_history, scheme_code, from_date, to_date)
 
 
-@mcp.tool()
+@mcp.tool(annotations=EXTERNAL_READ_ONLY)
 def calculate_fund_metrics(scheme_code: str, from_date: str, to_date: str) -> dict:
     """Calculate deterministic absolute return, CAGR, volatility, and drawdown."""
     return _call(service.calculate_fund_metrics, scheme_code, from_date, to_date)
 
 
-@mcp.tool()
+@mcp.tool(annotations=EXTERNAL_READ_ONLY)
 def compare_funds(scheme_codes: list[str], from_date: str, to_date: str) -> dict:
     """Compare return, downside risk, rolling 1Y/3Y returns, drawdown duration and recovery for 2-10 schemes."""
     return _call(service.compare_funds, scheme_codes, from_date, to_date)
 
 
-@mcp.tool()
+@mcp.tool(annotations=EXTERNAL_READ_ONLY)
 def calculate_sip_returns(
     scheme_code: str, monthly_amount: float, from_date: str, to_date: str
 ) -> dict:
@@ -136,7 +156,7 @@ def calculate_sip_returns(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=EXTERNAL_READ_ONLY)
 def compare_sip_returns(
     scheme_codes: list[str], monthly_amount: float, from_date: str, to_date: str
 ) -> dict:
@@ -150,19 +170,19 @@ def compare_sip_returns(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=EXTERNAL_READ_ONLY)
 def calculate_rolling_returns(scheme_code: str, from_date: str, to_date: str) -> dict:
     """Return calendar 1Y/3Y rolling CAGR windows and summaries over at most five years."""
     return _call(service.calculate_rolling_returns, scheme_code, from_date, to_date)
 
 
-@mcp.tool()
+@mcp.tool(annotations=LOCAL_READ_ONLY)
 def search_benchmarks(query: str = "") -> dict:
     """Find supported total-return benchmarks; empty query lists the catalog."""
     return _call(benchmark_service.search_benchmarks, query)
 
 
-@mcp.tool()
+@mcp.tool(annotations=EXTERNAL_READ_ONLY)
 def compare_fund_with_benchmark(
     scheme_code: str, benchmark_code: str, from_date: str, to_date: str
 ) -> dict:
@@ -176,13 +196,13 @@ def compare_fund_with_benchmark(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=EXTERNAL_READ_ONLY)
 def get_holdings_coverage() -> dict:
     """List supported PPFAS schemes and available monthly XLSX disclosures. Not all AMCs."""
     return _call(holdings_service.get_holdings_coverage)
 
 
-@mcp.tool()
+@mcp.tool(annotations=EXTERNAL_CACHE_WRITING)
 def get_fund_holdings(scheme_code: str, month: str | None = None) -> dict:
     """Get ISIN-bearing cash holdings for a covered PPFAS scheme. Month YYYY-MM; defaults to latest.
 
@@ -192,7 +212,7 @@ def get_fund_holdings(scheme_code: str, month: str | None = None) -> dict:
     return _call(holdings_service.get_fund_holdings, scheme_code, month)
 
 
-@mcp.tool()
+@mcp.tool(annotations=EXTERNAL_CACHE_WRITING)
 def get_funds_holding_stock(isin: str, month: str | None = None) -> dict:
     """Rank covered PPFAS funds by reported ISIN security weight. Not all AMCs.
 
@@ -202,7 +222,7 @@ def get_funds_holding_stock(isin: str, month: str | None = None) -> dict:
     return _call(holdings_service.get_funds_holding_stock, isin, month)
 
 
-@mcp.tool()
+@mcp.tool(annotations=EXTERNAL_CACHE_WRITING)
 def compare_fund_overlap(
     scheme_codes: list[str],
     month: str | None = None,
@@ -230,7 +250,7 @@ def compare_fund_overlap(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=EXTERNAL_CACHE_WRITING)
 def get_stock_ownership_changes(isin: str, from_month: str, to_month: str) -> dict:
     """Compare quantities across matched PPFAS monthly snapshots (YYYY-MM).
 
@@ -241,19 +261,19 @@ def get_stock_ownership_changes(isin: str, from_month: str, to_month: str) -> di
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=EXTERNAL_CACHE_WRITING)
 def get_funds_accumulating_stock(isin: str, month: str) -> dict:
     """List covered funds with increased quantities since the prior month; not verified buying flows."""
     return _call(holdings_service.get_funds_accumulating_stock, isin, month)
 
 
-@mcp.tool()
+@mcp.tool(annotations=EXTERNAL_CACHE_WRITING)
 def get_new_fund_buyers(isin: str, month: str) -> dict:
     """List new positions within covered funds with both monthly snapshots available."""
     return _call(holdings_service.get_new_fund_buyers, isin, month)
 
 
-@mcp.tool()
+@mcp.tool(annotations=EXTERNAL_CACHE_WRITING)
 def get_fund_exits_from_stock(isin: str, month: str) -> dict:
     """List positions absent in the current snapshot but present in the prior matched month."""
     return _call(holdings_service.get_fund_exits_from_stock, isin, month)
